@@ -1,0 +1,200 @@
+{% extends "meetgenius/layout.html" %}
+
+{% block title %}會議{% endblock %}
+
+{% block content %}
+<div class="page-head spread">
+  <div>
+    <h1>會議</h1>
+    <p class="sub">所有已上傳的錄音與轉錄結果</p>
+  </div>
+  <a href="{{ url_for('additional_blueprint.index') }}" class="btn btn-primary">
+    <i class="bi bi-plus-lg"></i>上傳會議
+  </a>
+</div>
+
+{% if meetings %}
+  {% set total_seconds = meetings | map(attribute='duration') | select('ne', none) | sum %}
+  <div class="grid grid-4" style="margin-bottom:20px;">
+    <div class="stat">
+      <span class="n">{{ meetings | length }}</span>
+      <span class="k"><i class="bi bi-collection"></i>會議總數</span>
+    </div>
+    <div class="stat is-success">
+      <span class="n">{{ meetings | selectattr('status', 'equalto', 'completed') | list | length }}</span>
+      <span class="k"><i class="bi bi-check2"></i>已完成</span>
+    </div>
+    <div class="stat is-warning">
+      <span class="n">{{ meetings | selectattr('status', 'equalto', 'processing') | list | length }}</span>
+      <span class="k"><i class="bi bi-arrow-repeat"></i>處理中</span>
+    </div>
+    <div class="stat is-accent">
+      <span class="n">{{ "%.1f"|format(total_seconds / 3600) }}<span style="font-size:14px;color:var(--text-3);"> 時</span></span>
+      <span class="k"><i class="bi bi-clock-history"></i>錄音總長</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th style="width:46%;">檔案</th>
+            <th style="width:14%;">狀態</th>
+            <th style="width:18%;">建立時間</th>
+            <th style="width:22%;text-align:right;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for meeting in meetings %}
+          <tr id="meeting-row-{{ meeting['id'] }}">
+            <td>
+              <div class="row-title">{{ meeting['original_filename'] }}</div>
+              <div class="meta-row">
+                {% if meeting['duration'] %}
+                  <span class="meta"><i class="bi bi-clock"></i><span class="mono">{{ "%.0f"|format(meeting['duration'] / 60) }}</span> 分鐘</span>
+                {% endif %}
+                {% if meeting['num_speakers'] %}
+                  <span class="meta"><i class="bi bi-people"></i><span class="mono">{{ meeting['num_speakers'] }}</span> 位發言者</span>
+                {% endif %}
+                {% if meeting['language'] %}
+                  <span class="meta"><i class="bi bi-translate"></i>{{ meeting['language'] }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              {% if meeting['status'] == 'completed' %}
+                <span class="status status-completed">已完成</span>
+              {% elif meeting['status'] == 'processing' %}
+                <span class="status status-processing">處理中</span>
+              {% elif meeting['status'] in ('error', 'failed') %}
+                <span class="status status-error">失敗</span>
+              {% else %}
+                <span class="status status-uploaded">已上傳</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="mono" style="font-size:12px;">
+                {% if meeting['created_at'] %}
+                  {% if meeting['created_at'].__class__.__name__ == 'datetime' %}
+                    {{ meeting['created_at'].strftime('%Y-%m-%d %H:%M') }}
+                  {% else %}
+                    {{ meeting['created_at'] }}
+                  {% endif %}
+                {% else %}—{% endif %}
+              </span>
+            </td>
+            <td>
+              <div class="row-actions">
+                <a href="{{ url_for('additional_blueprint.meeting_detail', meeting_id=meeting['id']) }}"
+                   class="btn btn-sm">開啟</a>
+                {% if meeting['status'] == 'completed' and meeting['global_summary'] %}
+                  <a href="{{ url_for('additional_blueprint.download_summary', meeting_id=meeting['id'], file_type='docx') }}"
+                     class="btn btn-sm" title="下載摘要"><i class="bi bi-download"></i></a>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-danger btn-delete-meeting"
+                        data-meeting-id="{{ meeting['id'] }}"
+                        data-meeting-name="{{ meeting['original_filename'] }}"
+                        title="刪除"><i class="bi bi-trash3"></i></button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}
+  <div class="panel">
+    <div class="empty">
+      <div class="empty-icon"><i class="bi bi-soundwave"></i></div>
+      <h3>還沒有任何會議</h3>
+      <p>上傳第一個錄音檔，系統會自動轉錄並整理重點。</p>
+      <a href="{{ url_for('additional_blueprint.index') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i>上傳會議
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+<!-- 刪除確認 -->
+<div class="modal" id="deleteMeetingModal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <h3 id="deleteTitle">刪除這場會議？</h3>
+    </div>
+    <div class="modal-body stack-s">
+      <p style="margin:0;">將永久刪除 <strong id="modalMeetingName" style="color:var(--text);"></strong> 的錄音、逐字稿與摘要，此操作無法復原。</p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-modal-close>取消</button>
+      <button type="button" class="btn btn-solid-danger" id="confirmDeleteBtn">刪除</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+(() => {
+  let targetId = null;
+  let targetRow = null;
+
+  const modal = document.getElementById('deleteMeetingModal');
+  const nameEl = document.getElementById('modalMeetingName');
+  const confirmBtn = document.getElementById('confirmDeleteBtn');
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-delete-meeting');
+    if (!btn) return;
+    targetId = btn.dataset.meetingId;
+    targetRow = btn.closest('tr');
+    nameEl.textContent = btn.dataset.meetingName || '';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '刪除';
+    window.MG.openModal(modal);
+  });
+
+  confirmBtn?.addEventListener('click', async () => {
+    if (!targetId) return;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '刪除中…';
+
+    try {
+      const res = await fetch(`/additional/meetgenius/meeting/${targetId}/delete`, {
+        method: 'DELETE',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status !== 'success') throw new Error(data.message || '刪除失敗');
+
+      window.MG.closeModal(modal);
+
+      if (targetRow) {
+        targetRow.style.transition = 'opacity .2s ease';
+        targetRow.style.opacity = '0';
+        setTimeout(() => {
+          targetRow.remove();
+          if (!document.querySelectorAll('table.data tbody tr').length) location.reload();
+        }, 200);
+      }
+    } catch (err) {
+      console.error('刪除失敗:', err);
+      window.MG.closeModal(modal);
+      alert(`刪除失敗：${err.message}`);
+    } finally {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '刪除';
+      targetId = null;
+      targetRow = null;
+    }
+  });
+
+  // 有會議仍在處理中時，定期重新整理狀態
+  if (document.querySelector('.status-processing')) {
+    setInterval(() => location.reload(), 30000);
+  }
+})();
+</script>
+{% endblock %}

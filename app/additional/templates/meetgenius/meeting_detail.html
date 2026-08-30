@@ -1,0 +1,1535 @@
+{% extends "meetgenius/layout.html" %}
+
+{% block title %}{{ meeting.original_filename or '會議詳情' }}{% endblock %}
+
+{% block body_class %}{% if meeting.status == 'completed' %} class="has-transport"{% endif %}{% endblock %}
+
+{% block content %}
+
+<!-- 翻譯進行中的覆蓋層 -->
+<div id="translation-overlay" class="overlay d-none">
+    <span class="spinner-border" style="width:26px;height:26px;"></span>
+    <h3>正在翻譯</h3>
+    <p>完成後會自動重新整理，請稍候。</p>
+    <div class="progress">
+        <div id="translation-progress-bar" class="progress-bar" style="width:0;"
+             role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <p id="translation-progress-text" class="mono" style="font-size:12px;"></p>
+</div>
+
+<!-- 標題 -->
+<div class="page-head">
+    <a href="{{ url_for('additional_blueprint.meetings_list') }}" class="btn btn-ghost btn-sm" style="margin-left:-10px;margin-bottom:8px;">
+        <i class="bi bi-chevron-left"></i>所有會議
+    </a>
+
+    <div class="spread" style="align-items:flex-start;">
+        <div style="min-width:0;">
+            <h1 style="word-break:break-word;">{{ meeting.original_filename }}</h1>
+            <div class="meta-row" style="margin-top:6px;">
+                <span class="meta">
+                    <i class="bi bi-calendar3"></i>
+                    <span class="mono">
+                        {% if meeting.created_at %}
+                            {% if meeting.created_at.__class__.__name__ == 'datetime' %}
+                                {{ meeting.created_at.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}{{ meeting.created_at }}{% endif %}
+                        {% else %}—{% endif %}
+                    </span>
+                </span>
+                {% if meeting.duration %}
+                    <span class="meta"><i class="bi bi-clock"></i><span class="mono">{{ "%.0f"|format(meeting.duration / 60) }}</span> 分鐘</span>
+                {% endif %}
+                {% if meeting.num_speakers %}
+                    <span class="meta"><i class="bi bi-people"></i><span class="mono">{{ meeting.num_speakers }}</span> 位發言者</span>
+                {% endif %}
+                <span class="meta"><i class="bi bi-translate"></i>{{ meeting.language or '未知' }}</span>
+            </div>
+        </div>
+
+        <div>
+            {% if meeting.status == 'completed' %}
+                <span class="status status-completed">已完成</span>
+            {% elif meeting.status == 'processing' %}
+                <span class="status status-processing">處理中</span>
+            {% elif meeting.status in ('error', 'failed') %}
+                <span class="status status-error">失敗</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if meeting.status == 'completed' %}
+<!-- 工具列 -->
+<div class="cluster" style="margin-bottom:18px;">
+    <button type="button" class="btn" id="translationToggle">
+        <i class="bi bi-translate"></i><span id="toggleText">顯示翻譯</span>
+    </button>
+
+    <div class="dropdown d-none" id="languageSelector">
+        <button type="button" class="btn dropdown-toggle" data-dropdown-toggle
+                aria-expanded="false" id="targetLanguageButton">
+            <span id="currentTargetLanguageText">選擇語言</span>
+        </button>
+        <ul class="dropdown-menu" id="targetLanguageDropdown">
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="en-US"><i class="bi bi-check2" style="visibility:hidden;"></i>English</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="zh-TW"><i class="bi bi-check2" style="visibility:hidden;"></i>繁體中文</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="ja-JP"><i class="bi bi-check2" style="visibility:hidden;"></i>日本語</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="ko-KR"><i class="bi bi-check2" style="visibility:hidden;"></i>한국어</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="es-ES"><i class="bi bi-check2" style="visibility:hidden;"></i>Español</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="fr-FR"><i class="bi bi-check2" style="visibility:hidden;"></i>Français</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="de-DE"><i class="bi bi-check2" style="visibility:hidden;"></i>Deutsch</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="ru-RU"><i class="bi bi-check2" style="visibility:hidden;"></i>Русский</a></li>
+            <li><a class="dropdown-item target-language-option" href="#" data-lang="pt-PT"><i class="bi bi-check2" style="visibility:hidden;"></i>Português</a></li>
+        </ul>
+    </div>
+
+    <div id="translationStatus" class="d-none">
+        <span class="chip"><span class="spinner-border spinner-border-sm"></span>翻譯中</span>
+    </div>
+
+    <div class="dropdown d-none" id="bilingualDownloadGroup">
+        <button type="button" class="btn dropdown-toggle" data-dropdown-toggle aria-expanded="false">
+            <i class="bi bi-download"></i>雙語逐字稿
+        </button>
+        <ul class="dropdown-menu">
+            <li><a class="dropdown-item" id="downloadBilingualDocx" href="#"><i class="bi bi-filetype-docx"></i>Word (.docx)</a></li>
+            <li><a class="dropdown-item" id="downloadBilingualTxt" href="#"><i class="bi bi-filetype-txt"></i>純文字 (.txt)</a></li>
+        </ul>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    {% if meeting.global_summary %}
+    <div class="dropdown">
+        <button type="button" class="btn dropdown-toggle" data-dropdown-toggle aria-expanded="false">
+            <i class="bi bi-download"></i>摘要
+        </button>
+        <ul class="dropdown-menu to-right">
+            <li><a class="dropdown-item" href="{{ url_for('additional_blueprint.download_summary', meeting_id=meeting.id, file_type='docx') }}"><i class="bi bi-filetype-docx"></i>Word (.docx)</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('additional_blueprint.download_summary', meeting_id=meeting.id, file_type='txt') }}"><i class="bi bi-filetype-txt"></i>純文字 (.txt)</a></li>
+        </ul>
+    </div>
+    <div class="dropdown">
+        <button type="button" class="btn dropdown-toggle" data-dropdown-toggle aria-expanded="false">
+            <i class="bi bi-download"></i>逐字稿
+        </button>
+        <ul class="dropdown-menu to-right">
+            <li><a class="dropdown-item" href="/additional/meetgenius/meeting/{{ meeting.id }}/subtitle.srt"><i class="bi bi-badge-cc"></i>字幕 (.srt)</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('additional_blueprint.download_file_route', meeting_id=meeting.id, file_type='transcript_docx') }}"><i class="bi bi-filetype-docx"></i>Word (.docx)</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('additional_blueprint.download_file_route', meeting_id=meeting.id, file_type='transcript_txt') }}"><i class="bi bi-filetype-txt"></i>純文字 (.txt)</a></li>
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- 主要內容 -->
+{% if meeting.status == 'processing' %}
+    <div class="panel">
+        <div class="empty">
+            <div class="empty-icon"><span class="spinner-border"></span></div>
+            <h3>轉錄進行中</h3>
+            <p>完成後這個頁面會自動更新，你也可以稍後再回來查看。</p>
+        </div>
+    </div>
+
+{% elif meeting.status in ('error', 'failed') %}
+    <div class="panel panel-pad stack">
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div>
+                <div class="alert-heading">處理失敗</div>
+                <div>{{ meeting.error_message or '未提供錯誤訊息。' }}</div>
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('additional_blueprint.index') }}" class="btn">重新上傳</a>
+        </div>
+    </div>
+
+{% elif meeting.status == 'completed' %}
+<div class="panel">
+    <div class="tabs" role="tablist">
+        <button class="tab active" id="summary-tab" role="tab" type="button"
+                data-tab-target="#summary-tab-pane" aria-selected="true">
+            <i class="bi bi-card-text"></i>摘要
+        </button>
+        <button class="tab" id="transcript-tab" role="tab" type="button"
+                data-tab-target="#transcript-tab-pane" aria-selected="false">
+            <i class="bi bi-body-text"></i>逐字稿
+        </button>
+        <button class="tab" id="faq-tab" role="tab" type="button"
+                data-tab-target="#faq-tab-pane" aria-selected="false">
+            <i class="bi bi-question-circle"></i>常見問答
+        </button>
+        <button class="tab" id="speaker-highlights-tab" role="tab" type="button"
+                data-tab-target="#speaker-highlights-tab-pane" aria-selected="false">
+            <i class="bi bi-person-lines-fill"></i>發言人重點
+        </button>
+        <button class="tab" id="settings-tab" role="tab" type="button"
+                data-tab-target="#settings-tab-pane" aria-selected="false">
+            <i class="bi bi-sliders"></i>發言人設定
+        </button>
+    </div>
+
+    <div class="panel-body">
+        <div class="tab-content">
+
+            <!-- 摘要 -->
+            <div class="tab-pane active show" id="summary-tab-pane" role="tabpanel" tabindex="0">
+                {% if meeting.global_summary and meeting.global_summary.summary %}
+                <div class="stack-l">
+                    <section>
+                        <div class="section-label"><i class="bi bi-file-text"></i>重點摘要</div>
+                        <div id="original-summary-markdown" style="display:none;">{{ meeting.global_summary.summary }}</div>
+                        <div id="original-summary" class="prose"></div>
+                        <div id="translated-summary" class="prose d-none" style="margin-top:14px;padding-left:14px;border-left:2px solid var(--border);">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span class="text-muted ms-2">載入翻譯中…</span>
+                        </div>
+                    </section>
+
+                    {% if meeting.global_summary.decisions %}
+                    <section>
+                        <div class="section-label"><i class="bi bi-flag"></i>決議</div>
+                        <div class="stack-s">
+                            {% for d in meeting.global_summary.decisions %}
+                                <div class="decision jumpable-item" data-jump="{{ d.jump if d.jump is defined else '' }}">
+                                    <div class="decision-text">{{ d.decision }}</div>
+                                    {% if d.ruled_out %}
+                                        <div class="ruled-out">
+                                            <span class="eyebrow">已排除</span>
+                                            {% for r in d.ruled_out %}
+                                                <span class="ruled-out-item">{{ r }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endif %}
+
+                    {% if meeting.global_summary.positions %}
+                    <section>
+                        <div class="section-label"><i class="bi bi-chat-square-quote"></i>各方立場</div>
+                        <div class="stack-s">
+                            {% for p in meeting.global_summary.positions %}
+                                <div class="position jumpable-item" data-jump="{{ p.jump if p.jump is defined else '' }}">
+                                    <div class="position-head">
+                                        <span class="position-topic">{{ p.topic }}</span>
+                                        <span class="outcome outcome-{{ p.outcome or 'unresolved' }}">
+                                            {%- if p.outcome == 'consensus' -%}已達成共識
+                                            {%- elif p.outcome == 'deferred' -%}延後處理
+                                            {%- elif p.outcome == 'clarified' -%}已釐清
+                                            {%- else -%}尚未解決{%- endif -%}
+                                        </span>
+                                    </div>
+                                    {% if p.stances %}
+                                        <div class="stances">
+                                            {% for s in p.stances %}
+                                                <div class="stance">
+                                                    <span class="stance-who">{{ s.speaker }}</span>
+                                                    <span class="stance-what">{{ s.position }}</span>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endif %}
+
+                    <section>
+                        <div class="section-label"><i class="bi bi-check2-square"></i>待辦事項</div>
+                        <div id="original-action-items">
+                            {% if meeting.global_summary.action_items and meeting.global_summary.action_items|length > 0 %}
+                                <div class="task-list">
+                                    {% for action_item in meeting.global_summary.action_items %}
+                                        {% if action_item is mapping %}
+                                            <div class="task jumpable-item" data-jump="{{ action_item.jump if action_item.jump is defined else '' }}">
+                                                <i class="bi bi-play-circle task-jump" title="跳到對應段落"></i>
+                                                <div class="task-body">
+                                                    <div class="task-text">{{ action_item.item }}</div>
+                                                    {% if action_item.owner or action_item.precondition %}
+                                                        <div class="task-meta">
+                                                            {% if action_item.owner %}
+                                                                <span class="owner owner-{{ action_item.owner_type or 'unassigned' }}">
+                                                                    {%- if action_item.owner_type == 'external' -%}
+                                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                                    {%- elif action_item.owner_type == 'team' -%}
+                                                                        <i class="bi bi-people"></i>
+                                                                    {%- else -%}
+                                                                        <i class="bi bi-person"></i>
+                                                                    {%- endif -%}
+                                                                    {{ action_item.owner }}
+                                                                    {% if action_item.owner_type == 'external' %}<span class="owner-tag">外部</span>{% endif %}
+                                                                </span>
+                                                            {% else %}
+                                                                <span class="owner owner-unassigned"><i class="bi bi-question-circle"></i>未指派</span>
+                                                            {% endif %}
+                                                            {% if action_item.precondition %}
+                                                                <span class="precondition"><i class="bi bi-arrow-return-right"></i>前提：{{ action_item.precondition }}</span>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            <div class="task is-static">
+                                                <i class="bi bi-dot"></i>
+                                                <div class="task-body"><div class="task-text">{{ action_item }}</div></div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted">這場會議沒有待辦事項。</p>
+                            {% endif %}
+                        </div>
+                        <div id="translated-action-items" class="d-none" style="margin-top:14px;padding-left:14px;border-left:2px solid var(--border);">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span class="text-muted ms-2">載入翻譯中…</span>
+                        </div>
+                    </section>
+
+                    <section>
+                        <div class="section-label"><i class="bi bi-tags"></i>關鍵字</div>
+                        <div id="original-keywords">
+                            {% if meeting.global_summary.keywords %}
+                                <div class="keyword-list">
+                                    {% for keyword in meeting.global_summary.keywords %}
+                                        <span class="keyword">{{ keyword }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted">沒有關鍵字。</p>
+                            {% endif %}
+                        </div>
+                        <div id="translated-keywords" class="d-none" style="margin-top:14px;padding-left:14px;border-left:2px solid var(--border);">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span class="text-muted ms-2">載入翻譯中…</span>
+                        </div>
+                    </section>
+                </div>
+                {% else %}
+                    <div class="empty">
+                        <div class="empty-icon"><i class="bi bi-file-text"></i></div>
+                        <h3>尚未產生摘要</h3>
+                        <p>轉錄已完成，但摘要沒有成功生成。</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- 逐字稿 -->
+            <div class="tab-pane" id="transcript-tab-pane" role="tabpanel" tabindex="0">
+                <div id="transcript-content" class="transcript">
+                    {% if meeting.transcript %}
+                        <div id="transcript-container">
+                            {% for segment in meeting.transcript %}
+                                <div class="transcript-segment"
+                                     data-start="{{ segment['start_time'] }}"
+                                     data-end="{{ segment['end_time'] }}"
+                                     data-segment-id="{{ loop.index0 }}">
+                                    <span class="timecode" title="跳到 {{ segment['start_time_formatted'] }}">{{ segment['start_time_formatted'] }}</span>
+                                    <span class="speaker-name" data-original-speaker="{{ segment['speaker'] }}">{{ segment['speaker'] }}</span>
+                                    <p class="segment-text">{{ segment['content'] }}</p>
+                                    <div class="bilingual-content d-none" data-translation-for-segment="{{ loop.index0 }}">
+                                        <p class="segment-text-translated"></p>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="empty">
+                            <div class="empty-icon"><i class="bi bi-body-text"></i></div>
+                            <h3>沒有逐字稿內容</h3>
+                            <p>音檔可能是靜音，或轉錄未產生任何文字。</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 常見問答 -->
+            <div class="tab-pane" id="faq-tab-pane" role="tabpanel" tabindex="0">
+                <div id="faq-content">
+                    <div class="d-flex align-items-center" id="faq-loading" style="gap:10px;padding:8px 0;">
+                        <span class="spinner-border spinner-border-sm"></span>
+                        <span class="text-muted">載入常見問答…</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 發言人重點 -->
+            <div class="tab-pane" id="speaker-highlights-tab-pane" role="tabpanel" tabindex="0">
+                <div class="spread" style="margin-bottom:6px;">
+                    <div>
+                        <div class="section-label" style="margin-bottom:4px;"><i class="bi bi-person-lines-fill"></i>發言人重點</div>
+                        <p class="text-muted" style="font-size:13px;">整理每位發言者的主要觀點、建議與承諾。</p>
+                    </div>
+                    <button id="generate-speaker-highlights-btn" class="btn btn-primary">
+                        <i class="bi bi-stars"></i>生成重點
+                    </button>
+                </div>
+
+                <div id="speaker-highlights-status"></div>
+
+                <div id="speaker-highlights-content">
+                    <div class="empty">
+                        <div class="empty-icon"><i class="bi bi-person-lines-fill"></i></div>
+                        <h3>尚未分析</h3>
+                        <p>點擊「生成重點」，AI 會依發言者整理各自的重點。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 發言人設定 -->
+            <div class="tab-pane" id="settings-tab-pane" role="tabpanel" tabindex="0">
+                <div class="section-label"><i class="bi bi-person-gear"></i>編輯發言人名稱</div>
+                <p class="text-muted mb-3" style="font-size:13px;">
+                    改名後會同步套用到逐字稿與所有匯出的檔案。
+                </p>
+
+                <div id="speaker-update-status"></div>
+
+                <form id="speakerNamesForm">
+                    <div id="speaker-list-container">
+                        <div class="d-flex align-items-center" style="gap:10px;padding:8px 0;">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span class="text-muted">載入發言人列表…</span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- 底部播放列 -->
+<div class="transport">
+    <div class="transport-controls">
+        <button id="playPauseBtn" class="play-btn" disabled aria-label="播放或暫停">
+            <i class="bi bi-play-fill"></i>
+        </button>
+        <button id="stopBtn" class="icon-btn" disabled aria-label="停止"><i class="bi bi-stop-fill"></i></button>
+        <button id="forwardBtn" class="icon-btn" disabled aria-label="快轉 10 秒"><i class="bi bi-skip-forward-fill"></i></button>
+    </div>
+
+    <div class="progress-section">
+        <span id="currentTime" class="time-display mono">00:00</span>
+        <div class="scrub" id="progressBarContainer">
+            <div id="progressBarFill" class="scrub-fill"></div>
+        </div>
+        <span id="totalDuration" class="time-display mono">00:00</span>
+    </div>
+
+    <div class="volume-section">
+        <i class="bi bi-volume-down"></i>
+        <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="1" disabled aria-label="音量">
+    </div>
+
+    <audio id="audioPlayer" src="{{ url_for('additional_blueprint.stream_audio', meeting_id=meeting.id) }}"
+           preload="metadata" style="display:none;"></audio>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block javascripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // 只有在 meeting 狀態為 completed 時才執行
+    {% if meeting.status == 'completed' %}
+
+    // --- Jump to Audio Time Logic ---
+    const jumpToTime = (timeInSeconds) => {
+        const time = parseFloat(timeInSeconds);
+        if (isNaN(time)) {
+            return;
+        }
+
+        const audioPlayer = document.getElementById('audioPlayer');
+        if (!audioPlayer) {
+            return;
+        }
+
+        // 1. 切換到逐字稿分頁
+        const transcriptTabEl = document.getElementById('transcript-tab');
+        if (transcriptTabEl) {
+            const tab = bootstrap.Tab.getOrCreateInstance(transcriptTabEl);
+            tab.show();
+        }
+
+        // 2. 等待分頁切換動畫完成後再操作音訊
+        const performJump = () => {
+            audioPlayer.currentTime = time;
+            if (audioPlayer.paused) {
+                audioPlayer.play();
+            }
+        };
+
+        if (transcriptTabEl && transcriptTabEl.classList.contains('active')) {
+            performJump();
+        } else if (transcriptTabEl) {
+            transcriptTabEl.addEventListener('shown.bs.tab', performJump, { once: true });
+        } else {
+            performJump();
+        }
+    };
+    
+    // 全域點擊事件監聽器 (Event Delegation)
+    document.body.addEventListener('click', (e) => {
+        // 檢查是否點擊的是音訊播放器相關元素，如果是則不處理
+        const audioPlayerElement = e.target.closest('.transport');
+        if (audioPlayerElement) {
+            console.log('點擊了音訊播放器，不處理跳轉邏輯');
+            return; // 讓音訊播放器的事件正常處理
+        }
+        
+        const jumpTarget = e.target.closest('.jumpable-item, .jump-to-audio');
+        
+        if (jumpTarget && jumpTarget.dataset.jump) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 處理高亮
+            // 移除所有已存在的高亮
+            document.querySelectorAll('.highlight-item').forEach(el => {
+                el.classList.remove('highlight-item');
+            });
+            // 為當前點擊的目標（如果是列表項）或其父項目（如果是按鈕）添加高亮
+            const itemToHighlight = jumpTarget.classList.contains('jump-to-audio') 
+                ? jumpTarget.closest('.accordion-item') 
+                : jumpTarget;
+            
+            if (itemToHighlight) {
+                itemToHighlight.classList.add('highlight-item');
+            }
+            
+            jumpToTime(jumpTarget.dataset.jump);
+        }
+    });
+
+    
+    // --- Render Markdown Summary ---
+    const markdownSourceEl = document.getElementById('original-summary-markdown');
+    const summaryContainer = document.getElementById('original-summary');
+    if (markdownSourceEl && summaryContainer && window.marked) {
+        const markdownText = markdownSourceEl.textContent;
+        summaryContainer.innerHTML = marked.parse(markdownText);
+    }
+
+    // --- Speaker Gradient Logic ---
+    const speakerGradientCache = {};
+    const gradientPalette = [
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+        'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+        'linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)',
+        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
+        'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
+        'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+        'linear-gradient(135deg, #d299c2 0%, #fef9d7 100%)',
+        'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+    ];
+    let nextGradientIndex = 0;
+
+    function getSpeakerGradient(speakerId) {
+        if (!speakerGradientCache[speakerId]) {
+            let gradient;
+            const match = speakerId.match(/_(\d+)$/);
+            if (match) {
+                const speakerIndex = parseInt(match[1], 10);
+                gradient = gradientPalette[speakerIndex % gradientPalette.length];
+            } else {
+                // Fallback for non-standard IDs
+                gradient = gradientPalette[nextGradientIndex % gradientPalette.length];
+                nextGradientIndex++;
+            }
+            speakerGradientCache[speakerId] = gradient;
+        }
+        return speakerGradientCache[speakerId];
+    }
+
+    function applySpeakerColors() {
+        // Remove colors from transcript speaker names
+        document.querySelectorAll('.speaker-name[data-original-speaker]').forEach(el => {
+            el.style.background = '';
+            el.style.color = '';
+            el.style.fontWeight = '600';
+        });
+        
+        // Remove colors from speaker settings tab labels
+        document.querySelectorAll('.speaker-label[data-original-id]').forEach(el => {
+            el.style.background = '';
+            el.style.color = '';
+            el.style.padding = '';
+            el.style.borderRadius = '';
+            el.style.fontWeight = '600';
+            el.style.display = 'inline-block';
+        });
+    }
+    // --- End of Speaker Gradient Logic ---
+
+    // --- Speaker Highlights Logic ---
+    const generateSpeakerHighlightsBtn = document.getElementById('generate-speaker-highlights-btn');
+    const speakerHighlightsStatus = document.getElementById('speaker-highlights-status');
+    const speakerHighlightsContent = document.getElementById('speaker-highlights-content');
+    
+    // 檢查是否已有發言人重點
+    const checkExistingSpeakerHighlights = async () => {
+        try {
+            const response = await fetch(`/additional/meetgenius/meeting/{{ meeting.id }}/speaker-highlights`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                displaySpeakerHighlights(data.speaker_highlights);
+                generateSpeakerHighlightsBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>重新生成';
+            }
+        } catch (error) {
+            console.log('尚未生成發言人重點');
+        }
+    };
+    
+    // 顯示發言人重點
+    const displaySpeakerHighlights = (speakerHighlights) => {
+        let highlightsHtml = '';
+        
+        Object.entries(speakerHighlights).forEach(([speaker, data]) => {
+            highlightsHtml += `
+                <div class="speaker-highlight-card mb-3">
+                    <div class="spread mb-3">
+                        <span class="speaker-label">
+                            <i class="bi bi-person-circle me-2"></i>${speaker}
+                        </span>
+                        <span class="chip"><span class="mono">${data.word_count || 0}</span> 字</span>
+                    </div>
+                    <div class="mb-3">
+                        <div class="section-label"><i class="bi bi-chat-quote"></i>重點摘要</div>
+                        <p class="mb-0">${data.summary || '無摘要'}</p>
+                    </div>
+                    ${data.key_points && data.key_points.length > 0 ? `
+                        <div>
+                            <div class="section-label"><i class="bi bi-list-ul"></i>關鍵要點</div>
+                            <div class="jump-list">
+                                ${data.key_points.map(point => `
+                                    <div class="jump-item is-static">
+                                        <i class="bi bi-dot"></i><span>${point}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        
+        speakerHighlightsContent.innerHTML = highlightsHtml;
+    };
+    
+    // 生成發言人重點
+    const generateSpeakerHighlights = async () => {
+        try {
+            generateSpeakerHighlightsBtn.disabled = true;
+            generateSpeakerHighlightsBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div>分析中...';
+            
+            speakerHighlightsStatus.innerHTML = `
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle me-2"></i>
+                    正在分析各發言人的重點，這可能需要幾分鐘時間...
+                </div>
+            `;
+            
+            const response = await fetch(`/additional/meetgenius/meeting/{{ meeting.id }}/speaker-highlights`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                speakerHighlightsStatus.innerHTML = `
+                    <div class="alert alert-success" role="alert">
+                        <i class="bi bi-check-circle me-2"></i>
+                        發言人重點分析完成！
+                    </div>
+                `;
+                displaySpeakerHighlights(data.speaker_highlights);
+                generateSpeakerHighlightsBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>重新生成';
+            } else {
+                throw new Error(data.message || '生成失敗');
+            }
+        } catch (error) {
+            console.error('生成發言人重點失敗:', error);
+            speakerHighlightsStatus.innerHTML = `
+                <div class="alert alert-danger" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    生成發言人重點時發生錯誤：${error.message}
+                </div>
+            `;
+            generateSpeakerHighlightsBtn.innerHTML = '<i class="bi bi-magic me-1"></i>生成重點';
+        } finally {
+            generateSpeakerHighlightsBtn.disabled = false;
+        }
+    };
+    
+    // 綁定事件
+    if (generateSpeakerHighlightsBtn) {
+        generateSpeakerHighlightsBtn.addEventListener('click', generateSpeakerHighlights);
+        // 頁面載入時檢查是否已有重點
+        checkExistingSpeakerHighlights();
+    }
+    
+    // --- End of Speaker Highlights Logic ---
+
+    // Speaker settings logic
+    const speakerSettingsTab = document.getElementById('settings-tab');
+    const speakerListContainer = document.getElementById('speaker-list-container');
+    const statusContainer = document.getElementById('speaker-update-status');
+    const meetingId = "{{ meeting.id }}";
+    let speakerNamesCache = null; // 用於快取發言人名稱
+    let isTranslationMode = false; // 翻譯模式開關
+    let currentTargetLanguage = null; // 當前選擇的目標語言
+    let translationCache = {}; // 翻譯快取
+    let isTranslating = false; // 翻譯狀態
+    let pollingInterval = null; // 用於輪詢的計時器
+
+    // --- 頁面載入時預先填充翻譯快取 ---
+    const preloadedTranslations = {{ meeting.translations | tojson | safe if meeting.translations else '{}' }};
+    for (const [lang, data] of Object.entries(preloadedTranslations)) {
+        if (data.summary || data.transcript) {
+            translationCache[lang] = {
+                summary: data.summary?.summary,
+                action_items: data.summary?.action_items,
+                keywords: data.summary?.keywords,
+                transcript: data.transcript
+            };
+        }
+    }
+    // ------------------------------------
+
+    // 語言映射
+    const languageMap = {
+        'en-US': 'English',
+        'zh-TW': '繁體中文',
+        'ja-JP': '日本語',
+        'ko-KR': '한국어',
+        'es-ES': 'Español',
+        'fr-FR': 'Français',
+        'de-DE': 'Deutsch',
+        'ru-RU': 'Русский',
+        'pt-PT': 'Português'
+    };
+
+    // 翻譯模式切換
+    const toggleTranslationMode = () => {
+        isTranslationMode = !isTranslationMode;
+        const toggleButton = document.getElementById('translationToggle');
+        const languageSelector = document.getElementById('languageSelector');
+        const toggleText = document.getElementById('toggleText');
+
+        if (isTranslationMode) {
+            toggleButton.classList.add('active');
+            toggleText.textContent = '隱藏翻譯';
+            languageSelector.classList.remove('d-none');
+            languageSelector.classList.add('fade-in');
+        } else {
+            toggleButton.classList.remove('active');
+            toggleText.textContent = '顯示翻譯';
+            languageSelector.classList.add('d-none');
+            languageSelector.classList.remove('fade-in');
+            showOriginalContent();
+            currentTargetLanguage = null;
+            updateTargetLanguageSelector(null);
+            // 當使用者手動關閉翻譯時，清除記憶
+            localStorage.removeItem('meetgenius_selectedLanguage');
+        }
+    };
+
+    // 啟動翻譯流程（背景+輪詢）
+    const startTranslationProcess = async (targetLanguage) => {
+        const overlay = document.getElementById('translation-overlay');
+        overlay.classList.remove('d-none'); // 顯示遮罩
+
+        try {
+            const response = await fetch(`/additional/meetgenius/meeting/${meetingId}/translate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    target_language: targetLanguage,
+                    // force_retranslate: true // 恢復正常，不再總是強制重翻
+                })
+            });
+
+            const data = await response.json();
+            if (response.ok && (data.status === 'processing' || data.status === 'completed')) {
+                if (data.status === 'completed') {
+                    // 如果已完成，直接重新載入
+                    location.reload();
+                    return;
+                }
+                // 開始輪詢
+                pollTranslationStatus(targetLanguage);
+            } else {
+                throw new Error(data.message || '啟動翻譯失敗');
+            }
+        } catch (error) {
+            overlay.classList.add('d-none');
+            showStatusMessage(`翻譯錯誤: ${error.message}`, 'danger');
+        }
+    };
+
+    // 輪詢翻譯狀態
+    const pollTranslationStatus = (targetLanguage) => {
+        // 防止重複輪詢
+        if (pollingInterval) clearInterval(pollingInterval);
+
+        pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/additional/meetgenius/meeting/${meetingId}/translation-status/${targetLanguage}`);
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    const job = data.job;
+                    
+                    // 更新進度條
+                    const progressBar = document.getElementById('translation-progress-bar');
+                    const progressText = document.getElementById('translation-progress-text');
+                    if (job.progress_total > 0) {
+                        const percent = (job.progress_current / job.progress_total) * 100;
+                        progressBar.style.width = `${percent}%`;
+                        progressBar.setAttribute('aria-valuenow', percent);
+                        progressText.textContent = `正在翻譯第 ${job.progress_current} / ${job.progress_total} 個項目...`;
+                    }
+
+                    const jobStatus = job.status;
+                    if (jobStatus === 'completed') {
+                        // 滿格動畫後再重新整理
+                        progressBar.style.width = '100%';
+                        progressText.textContent = '翻譯完成！';
+                        clearInterval(pollingInterval);
+                        setTimeout(() => location.reload(), 1000); // 延遲 1 秒後重新整理
+                    } else if (jobStatus === 'error') {
+                        clearInterval(pollingInterval);
+                        document.getElementById('translation-overlay').classList.add('d-none');
+                        showStatusMessage(`翻譯任務失敗: ${job.error_message || '未知錯誤'}`, 'danger');
+                    }
+                    // 如果是 'processing'，則繼續輪詢
+                } else {
+                    throw new Error(data.message || '無法獲取狀態');
+                }
+            } catch (error) {
+                clearInterval(pollingInterval);
+                document.getElementById('translation-overlay').classList.add('d-none');
+                showStatusMessage(`輪詢狀態時出錯: ${error.message}`, 'danger');
+            }
+        }, 5000); // 每 5 秒輪詢一次
+    };
+
+    // 舊的翻譯功能，現在只用於顯示快取內容
+    const displayCachedTranslation = async (targetLanguage) => {
+        if (!targetLanguage) return;
+
+        // 檢查快取
+        if (translationCache[targetLanguage]) {
+            showTranslatedContent(targetLanguage, translationCache[targetLanguage]);
+            return;
+        }
+        
+        // 如果快取中沒有，理論上不應該發生，因為現在是先啟動後端任務
+        // 但保留此處邏輯以防萬一
+        console.warn(`在快取中找不到 ${targetLanguage} 的翻譯，這在新的流程中不應該發生。`);
+    };
+
+    const showOriginalContent = () => {
+        // 隱藏所有翻譯內容
+        document.getElementById('translated-summary').classList.add('d-none');
+        document.getElementById('translated-action-items').classList.add('d-none');
+        document.getElementById('translated-keywords').classList.add('d-none');
+        
+        document.querySelectorAll('[data-translation-for-segment]').forEach(el => {
+            el.classList.add('d-none');
+        });
+
+        // 重新設置當前活躍段落
+        currentActiveSegment = null;
+    };
+
+    const showTranslatedContent = (language, translation) => {
+        // 更新摘要
+        if (translation.summary) {
+            const translatedSummaryContainer = document.getElementById('translated-summary');
+            if (translatedSummaryContainer && window.marked) {
+                translatedSummaryContainer.innerHTML = marked.parse(translation.summary);
+            } else if (translatedSummaryContainer) {
+                // Fallback if marked.js is not available
+                translatedSummaryContainer.innerHTML = `<p class="mb-0">${translation.summary.replace(/\\n/g, '<br>')}</p>`;
+            }
+            document.getElementById('original-summary').classList.remove('d-none'); // 確保原文可見
+            document.getElementById('translated-summary').classList.remove('d-none');
+        }
+
+        // 更新待辦事項
+        if (translation.action_items) {
+            let actionItemsHtml = '';
+            if (translation.action_items.length > 0) {
+                actionItemsHtml = '<ul class="list-group list-group-flush">';
+                translation.action_items.forEach(item => {
+                    let itemText = '';
+                    let isJumpable = false;
+                    let jumpTime = '';
+
+                    // 判斷項目是物件還是單純的字串
+                    if (typeof item === 'object' && item !== null && item.hasOwnProperty('item')) {
+                        itemText = item.item;
+                        if (item.hasOwnProperty('jump') && item.jump !== undefined) {
+                            isJumpable = true;
+                            jumpTime = item.jump;
+                        }
+                    } else if (typeof item === 'string') {
+                        itemText = item;
+                    }
+                    
+                    if (isJumpable) {
+                        actionItemsHtml += `
+                            <li class="list-group-item bg-transparent border-0 px-0 jumpable-item" style="cursor: pointer;" data-jump="${jumpTime}">
+                                <i class="bi bi-play-circle-fill me-2 text-primary" title="跳轉至音檔段落"></i>${itemText}
+                            </li>
+                        `;
+                    } else {
+                        actionItemsHtml += `
+                            <li class="list-group-item bg-transparent border-0 px-0">
+                                <i class="bi bi-arrow-right-circle me-2 text-primary"></i>${itemText}
+                            </li>
+                        `;
+                    }
+                });
+                actionItemsHtml += '</ul>';
+            } else {
+                actionItemsHtml = '<p class="text-muted mb-0"><i class="bi bi-info-circle me-2"></i>沒有待辦事項</p>';
+            }
+            
+            document.getElementById('translated-action-items').innerHTML = actionItemsHtml;
+            document.getElementById('original-action-items').classList.remove('d-none'); // 確保原文可見
+            document.getElementById('translated-action-items').classList.remove('d-none');
+        }
+
+        // 更新關鍵字
+        if (translation.keywords) {
+            let keywordsHtml = '';
+            if (translation.keywords.length > 0) {
+                translation.keywords.forEach(keyword => {
+                    keywordsHtml += `
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis me-2 mb-2">
+                            <i class="bi bi-tag me-1"></i>${keyword}
+                        </span>
+                    `;
+                });
+            } else {
+                keywordsHtml = '<p class="text-muted mb-0"><i class="bi bi-info-circle me-2"></i>沒有關鍵字</p>';
+            }
+            
+            document.getElementById('translated-keywords').innerHTML = keywordsHtml;
+            document.getElementById('original-keywords').classList.remove('d-none'); // 確保原文可見
+            document.getElementById('translated-keywords').classList.remove('d-none');
+        }
+
+        // 更新逐字稿
+        if (translation.transcript && translation.transcript.length > 0) {
+             // 先隱藏所有，以防之前的翻譯殘留
+            document.querySelectorAll('[data-translation-for-segment]').forEach(el => {
+                el.classList.add('d-none');
+            });
+
+            translation.transcript.forEach((segment, index) => {
+                const translationContainer = document.querySelector(`[data-translation-for-segment="${index}"]`);
+                if (translationContainer) {
+                    const translatedTextEl = translationContainer.querySelector('.segment-text-translated');
+                    if (translatedTextEl) {
+                        translatedTextEl.textContent = segment.translated_content;
+                    }
+                    translationContainer.classList.remove('d-none');
+                }
+            });
+        }
+    };
+
+    const showTranslationError = (errorMessage) => {
+        const errorHtml = `
+            <div class="translation-error">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                翻譯失敗: ${errorMessage}
+                <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重試
+                </button>
+            </div>
+        `;
+        
+        document.getElementById('translated-summary').innerHTML = errorHtml;
+        document.getElementById('translated-action-items').innerHTML = errorHtml;
+        document.getElementById('translated-keywords').innerHTML = errorHtml;
+        document.getElementById('translated-transcript').innerHTML = errorHtml;
+    };
+
+    const showTranslationStatus = (isVisible) => {
+        const statusElement = document.getElementById('translationStatus');
+        if (isVisible) {
+            statusElement.classList.remove('d-none');
+        } else {
+            statusElement.classList.add('d-none');
+        }
+    };
+
+    const updateTargetLanguageSelector = (language) => {
+        const currentTargetLanguageText = document.getElementById('currentTargetLanguageText');
+        const bilingualDownloadGroup = document.getElementById('bilingualDownloadGroup');
+        
+        if (language) {
+            currentTargetLanguageText.textContent = languageMap[language];
+
+            // 顯示雙語下載按鈕並更新連結
+            if (bilingualDownloadGroup) {
+                bilingualDownloadGroup.classList.remove('d-none');
+                
+                const downloadDocx = document.getElementById('downloadBilingualDocx');
+                const downloadTxt = document.getElementById('downloadBilingualTxt');
+                
+                // 使用未來將建立的後端路由
+                const baseUrl = `/additional/meetgenius/meeting/${meetingId}/download_bilingual_file`;
+                if(downloadDocx) {
+                    downloadDocx.href = `${baseUrl}/docx?target_language=${language}`;
+                }
+                if(downloadTxt) {
+                    downloadTxt.href = `${baseUrl}/txt?target_language=${language}`;
+                }
+            }
+        } else {
+            currentTargetLanguageText.textContent = '選擇翻譯語言';
+
+            // 隱藏雙語下載按鈕
+            if (bilingualDownloadGroup) {
+                bilingualDownloadGroup.classList.add('d-none');
+            }
+        }
+        
+        // 更新選項狀態
+        document.querySelectorAll('.target-language-option').forEach(option => {
+            const optionLang = option.dataset.lang;
+            const icon = option.querySelector('i');
+            
+            if (optionLang === language) {
+                option.classList.add('active');
+                icon.style.visibility = 'visible';
+            } else {
+                option.classList.remove('active');
+                icon.style.visibility = 'hidden';
+            }
+        });
+        
+        currentTargetLanguage = language;
+    };
+
+    // 翻譯模式切換事件監聽
+    document.getElementById('translationToggle').addEventListener('click', toggleTranslationMode);
+
+    // 目標語言選擇器事件監聽
+    document.getElementById('targetLanguageDropdown').addEventListener('click', async (e) => {
+        const languageOption = e.target.closest('.target-language-option');
+        if (languageOption) {
+            e.preventDefault();
+            const selectedLanguage = languageOption.dataset.lang;
+            
+            if (selectedLanguage !== currentTargetLanguage) {
+                // 儲存用戶的選擇
+                localStorage.setItem('meetgenius_selectedLanguage', selectedLanguage);
+                
+                updateTargetLanguageSelector(selectedLanguage);
+                if (isTranslationMode) {
+                    // 檢查快取，如果快取中有，則直接顯示
+                    if (translationCache[selectedLanguage]) {
+                        displayCachedTranslation(selectedLanguage);
+                    } else {
+                        // 如果快取中沒有，啟動後端翻譯流程
+                        await startTranslationProcess(selectedLanguage);
+                    }
+                }
+            }
+        }
+    });
+
+    // --- 頁面載入時檢查並套用記憶 ---
+    const applySavedLanguage = () => {
+        const savedLang = localStorage.getItem('meetgenius_selectedLanguage');
+        // 確保該語言的翻譯資料已預先載入
+        if (savedLang && translationCache[savedLang]) {
+            // 1. 強制開啟翻譯模式
+            if (!isTranslationMode) {
+                toggleTranslationMode();
+            }
+            // 2. 更新語言選擇器
+            updateTargetLanguageSelector(savedLang);
+            // 3. 顯示翻譯內容
+            displayCachedTranslation(savedLang);
+        }
+    };
+    // ---------------------------------
+
+    // 新增：一個根據最新的名稱列表來更新逐字稿 UI 的函式
+    const updateTranscriptWithCustomNames = (speakerNames) => {
+        document.querySelectorAll('.speaker-name[data-original-speaker]').forEach(el => {
+            const originalId = el.dataset.originalSpeaker;
+            if (speakerNames[originalId] && speakerNames[originalId] !== originalId) {
+                el.textContent = speakerNames[originalId];
+            } else {
+                el.textContent = originalId;
+            }
+        });
+    };
+
+    const fetchSpeakerNames = async () => {
+        // 如果已經在快取中，就直接使用，避免重複請求
+        if (speakerNamesCache) {
+            renderSpeakerForm(speakerNamesCache);
+            applySpeakerColors(); // Apply colors from cache
+            return;
+        }
+
+        try {
+            const fetchUrl = `/additional/meetgenius/meeting/${meetingId}/speaker-names`;
+            const response = await fetch(fetchUrl);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`無法獲取發言人列表 (狀態碼: ${response.status})。後端訊息: ${errorText}`);
+            }
+            
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                speakerNamesCache = data.speaker_names; // 存入快取
+                renderSpeakerForm(data.speaker_names);
+                updateTranscriptWithCustomNames(data.speaker_names); // 更新逐字稿
+                applySpeakerColors(); // Apply colors after fetching
+            } else {
+                throw new Error(data.message || '獲取發言人列表失敗');
+            }
+        } catch (error) {
+            speakerListContainer.innerHTML = `<div class="alert alert-danger">獲取發言人列表時發生錯誤。請按 F12 打開開發者工具的 Console 查看詳細的偵錯訊息。</div>`;
+        }
+    };
+
+    const renderSpeakerForm = (speakerNames) => {
+        speakerListContainer.innerHTML = '';
+        if (Object.keys(speakerNames).length === 0) {
+            speakerListContainer.innerHTML = '<p class="text-muted">此會議沒有偵測到任何發言人。</p>';
+            return;
+        }
+
+        for (const [originalId, customName] of Object.entries(speakerNames)) {
+            const isCustom = originalId !== customName;
+            const displayName = isCustom ? customName : originalId;
+            const row = `
+                <div class="row g-3 align-items-center mb-3" id="speaker-row-${originalId}">
+                    <div class="col-auto">
+                        <label for="speaker-input-${originalId}" class="col-form-label speaker-label" data-original-id="${originalId}">${displayName}</label>
+                    </div>
+                    <div class="col">
+                        <input type="text" id="speaker-input-${originalId}" class="form-control speaker-input" value="${customName || ''}" placeholder="請輸入發言人名稱">
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-primary btn-sm save-speaker-btn" data-original-id="${originalId}">
+                            <i class="bi bi-save me-1"></i> 儲存
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm reset-speaker-btn" data-original-id="${originalId}" ${isCustom ? '' : 'style="display: none;"'}>
+                           <i class="bi bi-arrow-counterclockwise"></i> 重設
+                        </button>
+                    </div>
+                </div>
+            `;
+            speakerListContainer.insertAdjacentHTML('beforeend', row);
+        }
+    };
+
+    const updateSpeakerNameInUI = (originalId, newName) => {
+        // 更新逐字稿中的發言者名稱
+        document.querySelectorAll(`.speaker-name[data-original-speaker="${originalId}"]`).forEach(el => {
+            el.textContent = newName;
+        });
+        
+        // 更新發言人設定中的標籤
+        const speakerLabel = document.querySelector(`.speaker-label[data-original-id="${originalId}"]`);
+        if (speakerLabel) {
+            speakerLabel.textContent = newName;
+        }
+        
+        // 更新快取
+        if (speakerNamesCache) {
+            speakerNamesCache[originalId] = newName;
+        }
+    };
+
+    speakerListContainer.addEventListener('click', async (e) => {
+        const saveButton = e.target.closest('.save-speaker-btn');
+        const resetButton = e.target.closest('.reset-speaker-btn');
+
+        if (saveButton) {
+            const originalId = saveButton.dataset.originalId;
+            const input = document.getElementById(`speaker-input-${originalId}`);
+            const customName = input.value.trim();
+
+            if (!customName) {
+                showStatusMessage('發言人名稱不能為空', 'danger');
+                return;
+            }
+
+            const payload = {
+                original_speaker_id: originalId,
+                custom_name: customName
+            };
+
+            try {
+                const response = await fetch(`/additional/meetgenius/meeting/${meetingId}/speaker-names`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    showStatusMessage(`已成功將 ${originalId} 的名稱更新為 ${customName}`, 'success');
+                    document.querySelector(`#speaker-row-${originalId} .reset-speaker-btn`).style.display = 'inline-block';
+                    updateSpeakerNameInUI(originalId, customName);
+                } else {
+                    throw new Error(data.message || '更新失敗');
+                }
+            } catch (error) {
+                showStatusMessage(`更新失敗: ${error.message}`, 'danger');
+            }
+        }
+
+        if (resetButton) {
+            const originalId = resetButton.dataset.originalId;
+             if (!confirm(`確定要將 ${originalId} 的名稱重設回原始值嗎？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/additional/meetgenius/meeting/${meetingId}/speaker-names/${originalId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                if (response.ok && data.status === 'success') {
+                    showStatusMessage(`已成功將 ${originalId} 的名稱重設`, 'success');
+                    const input = document.getElementById(`speaker-input-${originalId}`);
+                    input.value = originalId;
+                    resetButton.style.display = 'none';
+                    updateSpeakerNameInUI(originalId, originalId);
+                } else {
+                    throw new Error(data.message || '重設失敗');
+                }
+            } catch (error) {
+                showStatusMessage(`重設失敗: ${error.message}`, 'danger');
+            }
+        }
+    });
+
+    const showStatusMessage = (message, type = 'info') => {
+        statusContainer.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`;
+        setTimeout(() => {
+            const alert = statusContainer.querySelector('.alert');
+            if (alert) {
+                bootstrap.Alert.getOrCreateInstance(alert).close();
+            }
+        }, 5000);
+    };
+
+    // 當發言人設定 tab 被點擊時才載入資料
+    speakerSettingsTab.addEventListener('show.bs.tab', fetchSpeakerNames);
+    
+    // 頁面載入時就立即獲取一次發言人名稱，以更新逐字稿
+    fetchSpeakerNames();
+
+    // 頁面載入後，嘗試套用已儲存的語言選項
+    applySavedLanguage();
+
+    // --- New Audio Player Logic ---
+    const audioPlayer = document.getElementById('audioPlayer');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const forwardBtn = document.getElementById('forwardBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+    const currentTimeEl = document.getElementById('currentTime');
+    const totalDurationEl = document.getElementById('totalDuration');
+    const progressBarContainer = document.getElementById('progressBarContainer');
+    const progressBarFill = document.getElementById('progressBarFill');
+    
+    // 檢查音訊播放器元素是否存在
+    if (!audioPlayer) {
+        console.warn('音訊播放器元素未找到');
+        return;
+    }
+    if (!playPauseBtn) {
+        console.warn('播放/暫停按鈕未找到');
+        return;
+    }
+    
+    
+    const playIcon = '<i class="bi bi-play-fill"></i>';
+    const pauseIcon = '<i class="bi bi-pause-fill"></i>';
+
+    function formatTime(seconds) {
+        if (isNaN(seconds)) return '00:00';
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Enable controls when audio is ready
+    audioPlayer.addEventListener('loadedmetadata', () => {
+        console.log('音訊元數據已載入，時長:', audioPlayer.duration);
+        totalDurationEl.textContent = formatTime(audioPlayer.duration);
+        playPauseBtn.disabled = false;
+        stopBtn.disabled = false;
+        forwardBtn.disabled = false;
+        volumeSlider.disabled = false;
+        
+        // 確保按鈕在啟用後仍然可以點擊
+        [playPauseBtn, stopBtn, forwardBtn].forEach(btn => {
+            btn.style.pointerEvents = 'auto';
+            btn.style.cursor = 'pointer';
+        });
+        
+        console.log('音訊控制項已啟用');
+    });
+    
+    // 添加錯誤處理
+    audioPlayer.addEventListener('error', (e) => {
+        // 音訊載入失敗，但不阻止其他功能
+    });
+
+    // Update time and progress bar
+    audioPlayer.addEventListener('timeupdate', () => {
+        currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
+        const progressPercent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+        progressBarFill.style.width = `${progressPercent}%`;
+        updateTranscriptHighlight(audioPlayer.currentTime);
+    });
+
+    // Play/Pause button
+    playPauseBtn.addEventListener('click', (e) => {
+        console.log('播放/暫停按鈕被點擊');
+        
+        if (audioPlayer.paused) {
+            console.log('開始播放音訊');
+            audioPlayer.play().catch(e => {
+                console.error('播放失敗:', e);
+            });
+        } else {
+            console.log('暫停音訊');
+            audioPlayer.pause();
+        }
+    });
+
+    // Update icon on play/pause
+    audioPlayer.addEventListener('play', () => {
+        playPauseBtn.innerHTML = pauseIcon;
+    });
+    audioPlayer.addEventListener('pause', () => {
+        playPauseBtn.innerHTML = playIcon;
+    });
+
+    // Stop button
+    stopBtn.addEventListener('click', (e) => {
+        console.log('停止按鈕被點擊');
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    });
+
+    // Forward button
+    forwardBtn.addEventListener('click', (e) => {
+        console.log('快進按鈕被點擊');
+        audioPlayer.currentTime = Math.min(audioPlayer.duration, audioPlayer.currentTime + 10);
+    });
+
+    // Volume slider
+    volumeSlider.addEventListener('input', (e) => {
+        audioPlayer.volume = e.target.value;
+    });
+
+    // Seek on progress bar click
+    progressBarContainer.addEventListener('click', (e) => {
+        const rect = progressBarContainer.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const width = rect.width;
+        const duration = audioPlayer.duration;
+        audioPlayer.currentTime = (clickX / width) * duration;
+    });
+    
+    // Reset when finished
+    audioPlayer.addEventListener('ended', () => {
+        playPauseBtn.innerHTML = playIcon;
+    });
+    
+    let currentActiveSegment = null;
+    const transcriptContainer = document.getElementById('transcript-content');
+
+    // Transcript click to seek (支援原文和翻譯)
+    const transcriptContent = document.getElementById('transcript-content');
+    transcriptContent.addEventListener('click', (e) => {
+        const segmentText = e.target.closest('.segment-text');
+        if (segmentText) {
+            const segment = segmentText.closest('.transcript-segment');
+            const start = parseFloat(segment.dataset.start);
+            if (!isNaN(start) && audioPlayer.duration > 0) {
+                 audioPlayer.currentTime = start;
+                if (audioPlayer.paused) {
+                    audioPlayer.play();
+                }
+            }
+        }
+    });
+
+    // 更新音訊播放時的逐字稿高亮功能，支援翻譯模式
+    const updateTranscriptHighlight = (time) => {
+        let newActiveSegment = null;
+        const segments = document.querySelectorAll(`#transcript-container .transcript-segment`);
+        
+        // 找到當前播放的段落
+        for (const segment of segments) {
+            const start = parseFloat(segment.dataset.start);
+            const end = parseFloat(segment.dataset.end);
+            if (time >= start && time < end) {
+                newActiveSegment = segment;
+                break;
+            }
+        }
+        
+        // 如果當前活躍段落改變，更新高亮和滾動
+        if (newActiveSegment !== currentActiveSegment) {
+            // 移除舊段落的高亮
+            if (currentActiveSegment) {
+                currentActiveSegment.classList.remove('is-playing');
+            }
+            // 為新段落添加高亮
+            if (newActiveSegment) {
+                newActiveSegment.classList.add('is-playing');
+                
+                // 將新的活躍段落滾動到視圖中心
+                newActiveSegment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            currentActiveSegment = newActiveSegment;
+        }
+    };
+
+    // --- FAQ 載入邏輯 ---
+    const faqContent = document.getElementById('faq-content');
+    const faqLoading = document.getElementById('faq-loading');
+    
+    // 當 FAQ tab 被點擊時才載入資料
+    const faqTab = document.getElementById('faq-tab');
+    
+    const loadFAQ = async () => {        
+        try {
+            // 顯示載入中狀態
+            faqLoading.classList.remove('d-none');
+            
+            const response = await fetch(`/additional/meetgenius/meeting/${meetingId}/faq`);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`無法載入 FAQ (狀態碼: ${response.status})`);
+            }
+            
+            const data = await response.json();
+            
+            // 隱藏載入中狀態
+            faqLoading.classList.add('d-none');
+            
+            if (data.status === 'success' && data.faq && data.faq.length > 0) {
+                const accordion = document.createElement('div');
+                accordion.className = 'accordion accordion-flush';
+                accordion.id = 'faqAccordion';
+
+                data.faq.forEach((item, index) => {
+                    const accordionId = `faq-item-${index}`;
+                    
+                    // 如果存在 jump 時間，則建立跳轉按鈕
+                    const jumpButtonHtml = item.jump !== undefined
+                        ? `<button type="button" class="jump-to-audio" data-jump="${item.jump}" title="跳到對應段落"><i class="bi bi-play-circle"></i></button>`
+                        : '';
+
+                    const accordionItem = `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header d-flex align-items-center" id="faq-heading-${index}">
+                                <button class="accordion-button collapsed flex-grow-1" type="button" data-bs-toggle="collapse" data-bs-target="#${accordionId}" aria-expanded="false" aria-controls="${accordionId}">
+                                    ${item.question}
+                                </button>
+                                ${jumpButtonHtml}
+                            </h2>
+                            <div id="${accordionId}" class="accordion-collapse collapse" aria-labelledby="faq-heading-${index}" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    ${item.answer}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    accordion.innerHTML += accordionItem;
+                });
+
+                // 清空現有內容並添加新的手風琴
+                faqContent.innerHTML = '';
+                faqContent.appendChild(accordion);
+            } else {
+                faqContent.innerHTML = '<p class="text-muted">無相關問答</p>';
+            }
+        } catch (error) {
+            faqLoading.classList.add('d-none');
+            faqContent.innerHTML = `
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    載入常見問答時發生錯誤: ${error.message}
+                    <br><small class="text-muted">請檢查開發者工具的 Console 查看詳細錯誤訊息</small>
+                </div>
+            `;
+        }
+    };
+
+    // 當 FAQ tab 被點擊時才載入資料
+    faqTab.addEventListener('show.bs.tab', loadFAQ);
+
+    {% endif %}
+});
+</script>
+
+<script>
+// 依發言人指派分類色，讓逐字稿一眼可分辨誰在說話
+(function () {
+  const segments = document.querySelectorAll('#transcript-container .transcript-segment');
+  if (!segments.length) return;
+
+  const palette = new Map();
+  segments.forEach((seg) => {
+    const nameEl = seg.querySelector('.speaker-name');
+    const key = nameEl?.dataset.originalSpeaker || nameEl?.textContent.trim() || '';
+    if (!palette.has(key)) palette.set(key, palette.size % 8);
+    seg.classList.add('sp-' + palette.get(key));
+  });
+})();
+</script>
+{% endblock %}

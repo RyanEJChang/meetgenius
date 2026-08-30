@@ -1,0 +1,139 @@
+{% extends "meetgenius/layout.html" %}
+
+{% block title %}{{ meeting.title }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="cluster" style="margin-bottom:8px;">
+    <span class="chip"><i class="bi bi-play-circle"></i>Demo 結果</span>
+  </div>
+  <h1>{{ meeting.title }}</h1>
+  <div class="meta-row" style="margin-top:6px;">
+    <span class="meta"><i class="bi bi-file-earmark-music"></i>{{ meeting.original_filename }}</span>
+    <span class="meta"><i class="bi bi-calendar3"></i><span class="mono">{{ meeting.upload_time[:19] | replace('T', ' ') }}</span></span>
+  </div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="stat">
+    <span class="n">{{ meeting.duration }}</span>
+    <span class="k"><i class="bi bi-clock"></i>會議長度</span>
+  </div>
+  <div class="stat is-accent">
+    <span class="n">{{ meeting.participants | length }}</span>
+    <span class="k"><i class="bi bi-people"></i>與會者</span>
+  </div>
+  <div class="stat">
+    <span class="n">{{ meeting.summary.key_points | length }}</span>
+    <span class="k"><i class="bi bi-list-check"></i>重點</span>
+  </div>
+  <div class="stat is-warning">
+    <span class="n">{{ meeting.summary.action_items | length }}</span>
+    <span class="k"><i class="bi bi-check2-square"></i>待辦事項</span>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:minmax(0,2fr) minmax(260px,1fr);align-items:start;">
+
+  <!-- 主欄 -->
+  <div class="stack">
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-file-text"></i>會議摘要</div>
+      <p class="prose">{{ meeting.summary.overview }}</p>
+    </section>
+
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-list-check"></i>重點</div>
+      <div class="jump-list">
+        {% for point in meeting.summary.key_points %}
+          <div class="jump-item is-static"><i class="bi bi-dot"></i><span>{{ point }}</span></div>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if meeting.summary.decisions %}
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-flag"></i>決議</div>
+      <div class="stack-s">
+        {% for decision in meeting.summary.decisions %}
+          <div style="padding-left:12px;border-left:2px solid var(--accent-line);">
+            <div class="eyebrow">決議 {{ loop.index }}</div>
+            <p style="margin:2px 0 0;">{{ decision }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-check2-square"></i>待辦事項</div>
+      <div class="stack-s">
+        {% for item in meeting.summary.action_items %}
+          <div class="spread" style="padding:9px 0;border-bottom:1px solid var(--border);">
+            <div style="min-width:0;">
+              <div style="font-weight:550;">{{ item.task }}</div>
+              <div class="meta-row" style="margin-top:2px;">
+                <span class="meta"><i class="bi bi-person"></i>{{ item.assignee }}</span>
+              </div>
+            </div>
+            <span class="chip"><i class="bi bi-calendar-event"></i>{{ item.deadline }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>逐字稿</h2></div>
+      <div class="panel-body">
+        <div class="transcript">
+          {% for item in meeting.transcript %}
+            <div class="transcript-segment sp-{{ loop.index0 % 8 }}">
+              <span class="timecode">{{ item.timestamp }}</span>
+              <span class="speaker-name">{{ item.speaker }}</span>
+              <p class="segment-text">{{ item.content }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 側欄 -->
+  <div class="stack">
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-people"></i>與會者</div>
+      <div class="stack-s">
+        {% for participant in meeting.participants %}
+          <div class="cluster" style="gap:8px;">
+            <span class="speaker-name sp-{{ loop.index0 % 8 }}" style="margin:0;">{{ participant }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel panel-pad">
+      <div class="section-label"><i class="bi bi-tags"></i>關鍵字</div>
+      <div class="keyword-list">
+        {% for keyword in meeting.summary.keywords %}
+          <span class="keyword">{{ keyword }}</span>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel panel-pad stack-s">
+      <p class="text-muted" style="font-size:13px;">這是示範資料。上傳真實錄音即可取得實際的轉錄與分析結果。</p>
+      <a href="{{ url_for('additional_blueprint.index') }}" class="btn btn-primary btn-block">
+        <i class="bi bi-plus-lg"></i>上傳真實錄音
+      </a>
+      <a href="{{ url_for('additional_blueprint.demo_upload') }}" class="btn btn-block">再試一次 Demo</a>
+    </section>
+  </div>
+
+</div>
+
+<style>
+  @media (max-width: 900px) {
+    .grid[style*="2fr"] { grid-template-columns: 1fr !important; }
+  }
+</style>
+{% endblock %}

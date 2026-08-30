@@ -1,0 +1,198 @@
+{% extends "meetgenius/layout.html" %}
+
+{% block title %}Demo{% endblock %}
+
+{% block content %}
+<div class="wrap-narrow" style="margin:0 auto;">
+
+  <div class="page-head">
+    <div class="cluster" style="margin-bottom:8px;">
+      <span class="chip"><i class="bi bi-play-circle"></i>Demo</span>
+    </div>
+    <h1>試用 MeetGenius</h1>
+    <p class="sub">上傳任意音檔即可看到完整的轉錄、語者辨識與摘要成果；這個模式使用示範資料，不會消耗實際轉錄額度。</p>
+  </div>
+
+  <form id="demoUploadForm" action="{{ url_for('additional_blueprint.demo_upload_process') }}"
+        method="post" enctype="multipart/form-data">
+
+    <div class="panel">
+      <div class="panel-body">
+        <div class="dropzone" id="uploadArea">
+          <div class="dropzone-icon"><i class="bi bi-file-earmark-music"></i></div>
+          <h3>將音檔拖放到這裡</h3>
+          <p>或點擊選擇檔案</p>
+          <div class="formats">
+            <span class="format-tag">M4A</span>
+            <span class="format-tag">MP3</span>
+            <span class="format-tag">WAV</span>
+            <span class="format-tag">FLAC</span>
+            <span class="format-tag">WEBM</span>
+          </div>
+          <input type="file" id="fileInput" name="file"
+                 accept=".m4a,.mp3,.wav,.flac,.webm" class="d-none">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="fileInfoCard" style="display:none;">
+      <div class="panel-head"><h2>確認並開始</h2></div>
+      <div class="panel-body stack">
+        <div class="file-chip">
+          <span class="ic"><i class="bi bi-file-earmark-music"></i></span>
+          <div style="min-width:0;">
+            <div class="nm" id="fileName"></div>
+            <div class="sz" id="fileSize"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="field">
+            <label class="form-label" for="numSpeakers">發言人數</label>
+            <input type="number" class="form-control" id="numSpeakers" name="num_speakers"
+                   min="1" max="10" placeholder="使用示範資料" form="demoUploadForm">
+            <span class="hint"><i class="bi bi-info-circle"></i>Demo 固定展示多人會議情境</span>
+          </div>
+          <div class="field">
+            <label class="form-label" for="meetingType">會議類型</label>
+            <select class="form-control" id="meetingType" name="meeting_type" form="demoUploadForm">
+              <option value="business">商業會議</option>
+              <option value="academic">學術討論</option>
+              <option value="interview">面試會議</option>
+              <option value="brainstorm">創意發想</option>
+            </select>
+            <span class="hint"><i class="bi bi-info-circle"></i>不同類型會展示不同的分析結果</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <a href="{{ url_for('additional_blueprint.index') }}" class="btn">改用正式版</a>
+        <button type="submit" class="btn btn-primary">開始 Demo</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="panel" id="processingCard" style="display:none;">
+    <div class="panel-head">
+      <h2>處理中</h2>
+      <span class="chip"><span class="spinner-border spinner-border-sm"></span>進行中</span>
+    </div>
+    <div class="panel-body stack-s">
+      <span id="progressText" style="font-size:13px;color:var(--text-2);">準備示範資料…</span>
+      <div class="progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated"
+             id="progressBar" style="width:1%;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block javascripts %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const fileInput = document.getElementById('fileInput');
+      const uploadArea = document.getElementById('uploadArea');
+      const fileInfoCard = document.getElementById('fileInfoCard');
+      const fileName = document.getElementById('fileName');
+      const fileSize = document.getElementById('fileSize');
+      const demoUploadForm = document.getElementById('demoUploadForm');
+      const processingCard = document.getElementById('processingCard');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+
+      uploadArea.addEventListener('click', () => fileInput.click());
+
+      // 檔案選擇處理
+      fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+          fileName.textContent = file.name;
+          fileSize.textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+          fileInfoCard.style.display = 'block';
+          uploadArea.closest('.panel').style.display = 'none';
+        }
+      });
+
+      // 拖拽處理
+      uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+      });
+
+      uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+      });
+
+      uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          fileInput.files = files;
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+
+      // 表單提交處理
+      demoUploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        if (!fileInput.files[0]) {
+          alert('請先選擇一個檔案');
+          return;
+        }
+
+        fileInfoCard.style.display = 'none';
+        processingCard.style.display = 'block';
+
+        const steps = [
+          { progress: 20, text: '正在分析檔案…' },
+          { progress: 40, text: '啟動語音辨識引擎…' },
+          { progress: 60, text: '進行語者分離…' },
+          { progress: 80, text: '生成會議摘要…' },
+          { progress: 100, text: '完成，正在跳轉…' }
+        ];
+
+        let currentStep = 0;
+
+        function updateProgress() {
+          if (currentStep < steps.length) {
+            const step = steps[currentStep];
+            progressBar.style.width = step.progress + '%';
+            progressText.textContent = step.text;
+            currentStep++;
+            setTimeout(updateProgress, 1500);
+            return;
+          }
+
+          setTimeout(function() {
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('meeting_type', document.getElementById('meetingType').value);
+
+            fetch(demoUploadForm.action, { method: 'POST', body: formData })
+              .then(response => response.json())
+              .then(data => {
+                if (data.status === 'success') {
+                  window.location.href = '/additional/meetgenius/demo/result/' + data.demo_id;
+                } else {
+                  alert('處理失敗：' + data.message);
+                  location.reload();
+                }
+              })
+              .catch(error => {
+                console.error('Error:', error);
+                alert('發生錯誤，請重試');
+                location.reload();
+              });
+          }, 1000);
+        }
+
+        updateProgress();
+      });
+    });
+  </script>
+{% endblock %}

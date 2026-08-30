@@ -1,0 +1,219 @@
+{% extends "meetgenius/layout.html" %}
+
+{% block title %}上傳會議{% endblock %}
+
+{% block content %}
+<div class="wrap-narrow" style="margin:0 auto;">
+
+  <div class="page-head">
+    <h1>上傳會議錄音</h1>
+    <p class="sub">系統會自動轉錄、辨識發言者，並整理出摘要、待辦事項與常見問答。</p>
+  </div>
+
+  <form id="uploadForm" action="{{ url_for('additional_blueprint.upload_file') }}" method="post" enctype="multipart/form-data">
+
+    <!-- 選擇檔案 -->
+    <div class="panel" id="uploadCard">
+      <div class="panel-body">
+        <div class="dropzone" id="uploadArea">
+          <div class="dropzone-icon"><i class="bi bi-file-earmark-music"></i></div>
+          <h3>將音檔拖放到這裡</h3>
+          <p>或點擊選擇檔案，單檔上限 500 MB</p>
+          <div class="formats">
+            <span class="format-tag">M4A</span>
+            <span class="format-tag">MP3</span>
+            <span class="format-tag">WAV</span>
+            <span class="format-tag">FLAC</span>
+            <span class="format-tag">WEBM</span>
+            <span class="format-tag">MP4</span>
+          </div>
+          <input type="file" id="fileInput" name="file"
+                 accept=".m4a,.mp3,.wav,.flac,.webm,.mp4" class="d-none">
+        </div>
+      </div>
+    </div>
+
+    <!-- 確認與選項 -->
+    <div class="panel" id="fileInfoCard" style="display:none;">
+      <div class="panel-head">
+        <h2>確認並開始</h2>
+      </div>
+      <div class="panel-body stack">
+        <div class="file-chip">
+          <span class="ic"><i class="bi bi-file-earmark-music"></i></span>
+          <div style="min-width:0;">
+            <div class="nm" id="fileName"></div>
+            <div class="sz" id="fileSize"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="field">
+            <label class="form-label" for="numSpeakers">發言人數</label>
+            <input type="number" class="form-control" id="numSpeakers" name="num_speakers"
+                   min="1" max="10" placeholder="留空則自動偵測" form="uploadForm">
+            <span class="hint"><i class="bi bi-info-circle"></i>先告知人數可提高辨識準確度</span>
+          </div>
+          <div class="field">
+            <label class="form-label" for="supplementaryFile">參考文件</label>
+
+            <div class="file-picker-wrap">
+              <input type="file" id="supplementaryFile" name="supplementary_file"
+                     accept=".pdf,.docx,.pptx,.md,.txt,.csv" form="uploadForm" class="visually-hidden">
+
+              <label class="file-picker" for="supplementaryFile" id="supplementaryPicker">
+                <span class="file-picker-empty">
+                  <i class="bi bi-paperclip"></i>
+                  <span>PDF、Word、簡報、Markdown 或純文字</span>
+                </span>
+                <span class="file-picker-chosen" hidden>
+                  <i class="bi bi-file-earmark-text"></i>
+                  <span class="file-picker-name"></span>
+                  <span class="file-picker-size mono"></span>
+                </span>
+              </label>
+
+              <button type="button" class="file-picker-clear" id="supplementaryClear"
+                      hidden aria-label="移除參考文件">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+
+            <span class="hint"><i class="bi bi-info-circle"></i>議程或簡報可校正人名、產品名等專有名詞</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="cancelBtn">重新選擇</button>
+        <button type="submit" class="btn btn-primary">開始轉錄</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- 處理中 -->
+  <div class="panel" id="processingCard" style="display:none;">
+    <div class="panel-head">
+      <h2>轉錄中</h2>
+      <span class="chip"><span class="spinner-border spinner-border-sm"></span>進行中</span>
+    </div>
+    <div class="panel-body stack">
+      <div class="stack-s">
+        <div class="spread">
+          <span id="progressText" style="font-size:13px;color:var(--text-2);">準備中…</span>
+        </div>
+        <div class="progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar progress-bar-striped progress-bar-animated"
+               id="progressBar" style="width:1%;" aria-valuenow="0"></div>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step" data-step="preprocessing"><span class="dot"></span>音訊前處理</div>
+        <div class="step" data-step="processing"><span class="dot"></span>語音轉文字與語者辨識</div>
+        <div class="step" data-step="summarization"><span class="dot"></span>生成摘要與待辦事項</div>
+        <div class="step" data-step="completed"><span class="dot"></span>完成</div>
+      </div>
+
+      <p class="hint"><i class="bi bi-clock-history"></i>處理時間約為音檔長度的一半，完成後會自動跳轉。</p>
+    </div>
+  </div>
+
+  <!-- 說明 -->
+  <div class="grid grid-3" style="margin-top:28px;">
+    <div class="stat">
+      <span class="n"><i class="bi bi-mic" style="font-size:20px;"></i></span>
+      <span class="k">高精度轉錄，支援多語系混合</span>
+    </div>
+    <div class="stat">
+      <span class="n"><i class="bi bi-people" style="font-size:20px;"></i></span>
+      <span class="k">自動區分發言者並可自訂姓名</span>
+    </div>
+    <div class="stat">
+      <span class="n"><i class="bi bi-stars" style="font-size:20px;"></i></span>
+      <span class="k">整理摘要、待辦事項與關鍵字</span>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block javascripts %}
+  <script src="{{ url_for('additional_blueprint.static', filename='meetgenius/js/meetgenius.js') }}"></script>
+  <script>
+    // 參考文件選擇器：顯示已選檔名與大小，並可移除
+    (function () {
+      const input   = document.getElementById('supplementaryFile');
+      const picker  = document.getElementById('supplementaryPicker');
+      const clearBtn = document.getElementById('supplementaryClear');
+      if (!input || !picker) return;
+
+      const emptyEl  = picker.querySelector('.file-picker-empty');
+      const chosenEl = picker.querySelector('.file-picker-chosen');
+      const nameEl   = picker.querySelector('.file-picker-name');
+      const sizeEl   = picker.querySelector('.file-picker-size');
+
+      const formatSize = (bytes) => {
+        if (!bytes) return '';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
+      };
+
+      const render = () => {
+        const file = input.files && input.files[0];
+        picker.classList.toggle('has-file', !!file);
+        emptyEl.hidden = !!file;
+        chosenEl.hidden = !file;
+        clearBtn.hidden = !file;
+        if (file) {
+          nameEl.textContent = file.name;
+          nameEl.title = file.name;
+          sizeEl.textContent = formatSize(file.size);
+        }
+      };
+
+      input.addEventListener('change', render);
+
+      clearBtn.addEventListener('click', () => {
+        input.value = '';
+        render();
+      });
+
+      // 使用者按「重新選擇」時一併清掉參考文件
+      document.getElementById('cancelBtn')?.addEventListener('click', () => {
+        input.value = '';
+        render();
+      });
+
+      render();
+    })();
+
+    // 依進度階段點亮左側步驟
+    (function () {
+      const order = ['preprocessing', 'processing', 'summarization', 'completed'];
+      const steps = document.querySelectorAll('.step[data-step]');
+      if (!steps.length) return;
+
+      const paint = (step) => {
+        const idx = order.indexOf(step);
+        if (idx < 0) return;
+        steps.forEach((el) => {
+          const i = order.indexOf(el.dataset.step);
+          el.classList.toggle('is-done', i < idx || step === 'completed');
+          el.classList.toggle('is-active', i === idx && step !== 'completed');
+        });
+      };
+
+      // meetgenius.js 更新 progressText 時同步步驟狀態
+      const textEl = document.getElementById('progressText');
+      if (!textEl) return;
+      new MutationObserver(() => {
+        const t = textEl.textContent || '';
+        if (/前處理|準備/.test(t)) paint('preprocessing');
+        else if (/轉錄|語者|逐字稿/.test(t)) paint('processing');
+        else if (/摘要/.test(t)) paint('summarization');
+        else if (/完成/.test(t)) paint('completed');
+      }).observe(textEl, { childList: true, characterData: true, subtree: true });
+    })();
+  </script>
+{% endblock %}

@@ -1,0 +1,44 @@
+# 明確指定專案名稱。若不指定，compose 會以資料夾名稱推導，
+# 資料夾一改名就會建立全新的空 volume，等於看不到既有資料。
+name: meetgenius
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MEETGENIUS_DB_NAME:-meetgenius}
+      POSTGRES_USER: ${MEETGENIUS_DB_USER:-meetgenius}
+      POSTGRES_PASSWORD: ${MEETGENIUS_DB_PASSWORD:?請在 .env 設定 MEETGENIUS_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MEETGENIUS_DB_USER:-meetgenius} -d ${MEETGENIUS_DB_NAME:-meetgenius}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # 覆寫 .env 裡的 localhost：容器間以 service 名稱連線
+      MEETGENIUS_DB_HOST: db
+      MEETGENIUS_DB_PORT: 5432
+    ports:
+      - "8080:8080"
+    volumes:
+      # 上傳音檔與產出（SRT/RTTM）需在容器重啟後保留
+      - uploads:/app/app/additional/meetgenius/uploads
+      - processed:/app/app/additional/meetgenius/processed
+      - output:/app/app/additional/meetgenius/output
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:
+  processed:
+  output:

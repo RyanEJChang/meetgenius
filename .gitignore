@@ -1,0 +1,11 @@
+.env
+venv/
+__pycache__/
+*.pyc
+app/additional/meetgenius/uploads/
+app/additional/meetgenius/processed/
+app/additional/meetgenius/output/
+
+# 執行期產物
+*.log
+.DS_Store

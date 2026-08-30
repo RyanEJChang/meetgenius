@@ -1,0 +1,16 @@
+# 金鑰不打包進 image，改由 docker-compose 的 env_file 在執行期注入
+.env
+
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+server.log
+*.log
+
+# 本機執行時產生的檔案，容器內以 volume 掛載
+app/additional/meetgenius/uploads/*
+app/additional/meetgenius/processed/*
+app/additional/meetgenius/output/*

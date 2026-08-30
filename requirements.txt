@@ -1,0 +1,14 @@
+Flask
+Flask-Login
+python-dotenv
+psycopg2-binary
+bcrypt
+openai
+requests
+pydub
+python-docx
+python-pptx
+PyMuPDF
+srt
+opencc-python-reimplemented
+gunicorn

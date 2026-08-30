@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MeetGenius{% endblock %} · MeetGenius</title>
+
+  <script>
+    // 在首次繪製前套用主題，避免深色模式閃白
+    (function () {
+      try {
+        var t = localStorage.getItem('meetgenius-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+TC:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('additional_blueprint.static', filename='meetgenius/css/app.css') }}">
+
+  {% block stylesheets %}{% endblock %}
+</head>
+<body{% block body_class %}{% endblock %}>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="{{ url_for('additional_blueprint.index') }}">
+        <span class="brand-mark"><i class="bi bi-soundwave"></i></span>
+        MeetGenius
+      </a>
+
+      {% set ep = request.endpoint or '' %}
+      <nav class="topnav">
+        <a href="{{ url_for('additional_blueprint.index') }}"
+           class="{% if ep.endswith('.index') %}is-active{% endif %}">
+          <i class="bi bi-plus-lg"></i><span>上傳</span>
+        </a>
+        <a href="{{ url_for('additional_blueprint.meetings_list') }}"
+           class="{% if 'meeting' in ep and not ep.endswith('.index') %}is-active{% endif %}">
+          <i class="bi bi-collection"></i><span>會議</span>
+        </a>
+      </nav>
+
+      <div class="topbar-end">
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle
+                title="切換淺色 / 深色" aria-label="切換淺色或深色主題">
+          <i class="bi bi-sun"></i>
+          <i class="bi bi-moon-stars"></i>
+        </button>
+        <a class="icon-btn" href="{{ url_for('auth.logout') }}" title="登出" aria-label="登出">
+          <i class="bi bi-box-arrow-right"></i>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script src="{{ url_for('additional_blueprint.static', filename='meetgenius/js/ui.js') }}"></script>
+  {% block javascripts %}{% endblock %}
+</body>
+</html>
