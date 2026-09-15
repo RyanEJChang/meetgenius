@@ -6,7 +6,7 @@
 import os
 import time
 from typing import List, Dict
-from openai import OpenAI
+from app.openai_client import create_openai_client
 
 from ..utils.chinese import to_traditional, convert_deep
 
@@ -21,7 +21,7 @@ class OpenAITranslator:
         if not all([api_key, model]):
             raise ValueError("缺少 OpenAI 的必要設定 (api_key, model)")
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = create_openai_client(api_key)
         self.deployment = model
 
     def translate_text(self, text: str, target_language: str, source_language: str = 'auto') -> str:
