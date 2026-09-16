@@ -1,6 +1,6 @@
 import os
 import re
-from openai import OpenAI
+from app.openai_client import create_openai_client
 import json
 
 from .chinese import convert_deep
@@ -214,10 +214,9 @@ Do NOT derive any decision, position, action item, or FAQ from it; nothing here 
 ```"""
 
     try:
-        subscription_key = os.environ["OPENAI_API_KEY"]
         deployment = model or os.getenv("OPENAI_MODEL", "gpt-4o")
 
-        client = OpenAI(api_key=subscription_key)
+        client = create_openai_client()
 
         response = client.chat.completions.create(
             messages=[

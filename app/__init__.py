@@ -12,13 +12,13 @@ class _OpenAIInfo:
     """提供 current_app.audio_processor 介面所需的最小資訊（供補充文件摘要 / 翻譯狀態查詢使用）。"""
 
     def __init__(self):
-        from openai import OpenAI
+        from app.openai_client import create_openai_client
 
-        self.openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        self.openai_client = create_openai_client()
         self._model = os.getenv("OPENAI_MODEL", "gpt-4o")
 
     def get_provider_name(self):
-        return "OpenAI"
+        return "Azure OpenAI" if os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() else "OpenAI"
 
     def get_model_name(self):
         return self._model
